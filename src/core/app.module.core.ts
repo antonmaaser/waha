@@ -276,7 +276,7 @@ export class AppModuleCore {
       { prefix: '/api/', include: { authBasic: false } },
       { prefix: 'api', include: { authApiKey: true } },
       { prefix: '/health', include: { authBasic: false } },
-      { prefix: 'health', include: { authApiKey: true } },
+      { prefix: 'health', include: { authApiKey: false } },
       { prefix: '/ws', include: { authBasic: false } },
     );
     // WHATSAPP_API_KEY_EXCLUDE_PATH - env-driven auth exclusions
