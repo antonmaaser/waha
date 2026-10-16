@@ -8,6 +8,8 @@ enum Env {
   WAHA_DASHBOARD_ENABLED = 'WAHA_DASHBOARD_ENABLED',
   WAHA_DASHBOARD_USERNAME = 'WAHA_DASHBOARD_USERNAME',
   WAHA_DASHBOARD_PASSWORD = 'WAHA_DASHBOARD_PASSWORD',
+  WAHA_DASHBOARD_AUTO_AUTH = 'WAHA_DASHBOARD_AUTO_AUTH',
+  WAHA_DASHBOARD_SESSION_TTL = 'WAHA_DASHBOARD_SESSION_TTL',
 }
 
 const DASHBOARD_URI = '/dashboard';
@@ -18,6 +20,13 @@ export const DashboardEnvSchema = Joi.object({
     .falsy('0', 'no'),
   [Env.WAHA_DASHBOARD_USERNAME]: Joi.string().allow(''),
   [Env.WAHA_DASHBOARD_PASSWORD]: Joi.string().allow(''),
+  [Env.WAHA_DASHBOARD_AUTO_AUTH]: Joi.boolean()
+    .truthy('1', 'yes')
+    .falsy('0', 'no'),
+  [Env.WAHA_DASHBOARD_SESSION_TTL]: Joi.number()
+    .integer()
+    .min(60)
+    .max(86400),
 });
 
 export function isDashboardEnabled(env: NodeJS.ProcessEnv): boolean {

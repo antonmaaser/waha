@@ -10,6 +10,8 @@ import {
 import { HttpPathsModule } from '@waha/plugins/http.paths.module';
 import { HttpPathsService } from '@waha/plugins/HttpPathsService';
 import { join } from 'path';
+import { DashboardSessionAuthModule } from '@waha/core/auth/DashboardSessionAuth';
+import { DashboardBootstrapController } from './dashboard.controller';
 
 @Module({
   imports: [
@@ -22,9 +24,11 @@ import { join } from 'path';
       serveRoot: getDashboardUri(),
     }),
     HttpPathsModule,
+    DashboardSessionAuthModule,
   ],
   providers: [DashboardConfigService],
   exports: [DashboardConfigService],
+  controllers: [DashboardBootstrapController],
 })
 /**
  * Dashboard UI (WAHA_DASHBOARD_ENABLED, default true).
@@ -49,7 +53,7 @@ export class DashboardModule implements NestModule {
       const password = credentials[1];
       consumer
         .apply(BasicAuthFunction(username, password))
-        .forRoutes('dashboard');
+        .forRoutes('dashboard', DashboardBootstrapController);
     }
   }
 }

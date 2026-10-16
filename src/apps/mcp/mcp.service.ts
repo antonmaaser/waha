@@ -21,32 +21,47 @@ import { ProfileTools } from '@waha/apps/mcp/tools/profile.tools';
 import { StatusTools } from '@waha/apps/mcp/tools/status.tools';
 import { ServerTools } from '@waha/apps/mcp/tools/server.tools';
 import { KeysTools } from '@waha/apps/mcp/tools/keys.tools';
+import { McpOAuthService } from './oauth/oauth.module';
+import { oauthApi } from './oauth/api';
 
 @Injectable()
 export class McpService {
+  constructor(private readonly oauth: McpOAuthService) {}
+
   async handlePost(req: Request, res: Response) {
-    const apiKey = req.headers['x-api-key'] as string | undefined;
-    const api = new WAHASelf(apiKey);
-    const server = new WMcpServer([
-      new PingTools(api),
-      new SendTools(api),
-      new AuthTools(api),
-      new SessionTools(api),
-      new ChatTools(api),
-      new ApiTools(api),
-      new CallTools(api),
-      new ChannelTools(api),
-      new ContactTools(api),
-      new GroupTools(api),
-      new LabelTools(api),
-      new LidTools(api),
-      new PresenceTools(api),
-      new ProfileTools(api),
-      new StatusTools(api),
-      new ServerTools(api),
-      new KeysTools(api),
-      new AppsTools(api),
-    ]);
+    const apiKey = this.oauth.getApiKey(req);
+    let api: WAHASelf;
+    const excludedTools: string[] = [];
+    if (this.oauth.config) {
+      // These tools could expose the internal API key or send it to another host.
+      excludedTools.push('api-call', 'server-environment');
+      api = oauthApi(apiKey);
+    } else {
+      api = new WAHASelf(apiKey);
+    }
+    const server = new WMcpServer(
+      [
+        new PingTools(api),
+        new SendTools(api),
+        new AuthTools(api),
+        new SessionTools(api),
+        new ChatTools(api),
+        new ApiTools(api),
+        new CallTools(api),
+        new ChannelTools(api),
+        new ContactTools(api),
+        new GroupTools(api),
+        new LabelTools(api),
+        new LidTools(api),
+        new PresenceTools(api),
+        new ProfileTools(api),
+        new StatusTools(api),
+        new ServerTools(api),
+        new KeysTools(api),
+        new AppsTools(api),
+      ],
+      excludedTools,
+    );
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // stateless
     });

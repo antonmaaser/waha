@@ -1,6 +1,6 @@
-# Explicit versions and digests keep base image selection reproducible.
-ARG NODE_IMAGE=node:24.11.1-bookworm-slim@sha256:48abc13a19400ca3985071e287bd405a1d99306770eb81d61202fb6b65cf0b57
-ARG ASSETS_IMAGE=alpine:3.22.2@sha256:4b7ce07002c69e8f3d704a9c5d6fd3053be500b7f1c69fc0d80990c2ad8dd412
+# Explicit Node and Alpine versions select the base images.
+ARG NODE_IMAGE=node:24.11.1-bookworm-slim
+ARG ASSETS_IMAGE=alpine:3.22.2
 
 FROM ${NODE_IMAGE} AS dependencies
 ENV PUPPETEER_SKIP_DOWNLOAD=True
@@ -87,4 +87,4 @@ COPY --from=production-dependencies /git/node_modules ./node_modules
 COPY --from=gows /gows ./gows
 COPY --from=dashboard /dashboard ./dist/dashboard
 COPY --from=build /git/dist ./dist
-COPY --from=build /git/src/apps/mcp ./src/apps/mcp
+RUN node dist/modules/waha-dashboard/prepare-dashboard.js /app/dist/dashboard

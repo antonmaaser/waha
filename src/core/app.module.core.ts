@@ -16,6 +16,7 @@ import { WebsocketGatewayCore } from '@waha/api/websocket.gateway.core';
 import { AppsModuleExports } from '@waha/apps/apps.module';
 import { ContactsSessionController } from '@waha/api/contacts.session.controller';
 import { ApiKeyStrategy } from '@waha/core/auth/apiKey.strategy';
+import { DashboardSessionAuthModule } from '@waha/core/auth/DashboardSessionAuth';
 import { IApiKeyAuth } from '@waha/core/auth/auth';
 import { ApiKeyAuthMiddleware } from '@waha/core/auth/api-key-auth.middleware';
 import { WebSocketAuth } from '@waha/core/auth/WebSocketAuth';
@@ -92,6 +93,7 @@ import { ApiKeyAuthService } from './auth/ApiKeyAuthService';
 import { SessionService } from '@waha/core/services/SessionService';
 
 export const IMPORTS_CORE = [
+  DashboardSessionAuthModule,
   ...AppsModuleExports.imports,
   LoggerModule.forRootAsync({
     imports: [HttpPathsModule],

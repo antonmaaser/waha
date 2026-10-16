@@ -12,6 +12,29 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    # Fixed local-engine/storage policy; these values take precedence over .env.
+    environment:
+      WHATSAPP_DEFAULT_ENGINE: GOWS
+      WAHA_LOCAL_STORE_BASE_DIR: /app/.sessions
+      # Request all available history at linking; WORKING does not wait for sync.
+      # GOWS device properties apply on a new link, not retroactively on restart.
+      WAHA_GOWS_DEVICE_REQUIRE_FULL_SYNC: 'true'
+      # Literal "null" leaves these optional device limits unset, not zero.
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_FULL_SYNC_DAYS_LIMIT: 'null'
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_FULL_SYNC_SIZE_MB_LIMIT: 'null'
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_STORAGE_QUOTA_MB: 'null'
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_RECENT_SYNC_DAYS_LIMIT: 'null'
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_INITIAL_SYNC_MAX_MESSAGES_PER_CHAT: 'null'
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_THUMBNAIL_SYNC_DAYS_LIMIT: 'null'
+      # Download every media type when processing API responses or live events.
+      # This does not proactively download attachments from the entire history.
+      WAHA_API_DOWNLOAD_MEDIA: 'true'
+      WAHA_API_DOWNLOAD_MEDIA_MIMETYPES: ''
+      WAHA_EVENTS_DOWNLOAD_MEDIA: 'true'
+      WAHA_EVENTS_DOWNLOAD_MEDIA_MIMETYPES: ''
+      WAHA_MEDIA_STORAGE: LOCAL
+      WHATSAPP_FILES_FOLDER: /app/.media
+      WHATSAPP_FILES_LIFETIME: '0'
     ports:
       - '127.0.0.1:3000:3000'
     volumes:

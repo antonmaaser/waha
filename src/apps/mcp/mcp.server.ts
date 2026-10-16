@@ -14,7 +14,7 @@ import {
 export class WMcpServer {
   private readonly mcp: McpServer;
 
-  constructor(controllers: McpController[]) {
+  constructor(controllers: McpController[], excludedTools: string[] = []) {
     this.mcp = new McpServer({
       name: 'whatsapp-server-mcp',
       version: `${VERSION.version} (${VERSION.engine}, ${VERSION.tier}, ${VERSION.platform})`,
@@ -22,6 +22,9 @@ export class WMcpServer {
 
     for (const controller of controllers) {
       for (const { name, config, method } of getTools(controller)) {
+        if (excludedTools.includes(name)) {
+          continue;
+        }
         this.mcp.registerTool(
           name,
           config,

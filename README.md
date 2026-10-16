@@ -18,10 +18,10 @@ it does not start or replace a running container.
 The Dockerfile separates cached dependencies, TypeScript compilation,
 production dependencies, downloaded assets, native media tooling, and the final
 runtime. Source edits reuse dependency and native-runtime layers. The release
-image contains production Node dependencies, compiled code in `/app/dist`,
-and a copy of the MCP source in `/app/src/apps/mcp` for inspection.
+image contains production Node dependencies and compiled code in `/app/dist`
+for execution and inspection.
 
-Node `24.11.1-bookworm-slim` and Alpine `3.22.2` bases are pinned by digest.
+Node `24.11.1-bookworm-slim` and Alpine `3.22.2` bases use explicit version tags.
 Alpine only downloads assets: the supplied GOWS ARM64 binary needs glibc and
 libvips, so compilation and execution use Debian slim. GOWS and Dashboard
 versions are pinned in `waha.config.json`. No browser or compiler is installed
@@ -67,7 +67,7 @@ docker compose logs -f waha
 docker compose exec waha sh
 ```
 
-Inside the container, inspect `/app/src/apps/mcp` and `/app/dist/apps/mcp`.
+Inside the container, inspect compiled MCP code in `/app/dist/apps/mcp`.
 To inspect the built image without starting the service:
 
 ```sh
@@ -91,3 +91,29 @@ then serves that published image with `.env` and persistent data mounts.
 
 Here Compose builds the single browserless GOWS ARM64 variant from local source
 and serves that local image using the same runtime configuration model.
+
+## Automatic Dashboard authentication
+
+The Dashboard automatically connects to the WAHA server serving it.
+No API key needs to be entered, including after rotating `WAHA_API_KEY`.
+The browser receives an HttpOnly, SameSite=Strict session cookie, marked Secure
+on HTTPS. The master API key remains hashed server-side; no plaintext copy is
+needed or embedded in the image. The connection key shown in browser storage is
+only the public `waha-dashboard-session` selector and is useless on its own.
+
+With Dashboard login disabled, automatic authentication is restricted to
+`localhost`, `127.0.0.1`, and `[::1]`, with same-origin browser headers required.
+Anyone who can open that local Dashboard has administrator access. Keep the
+Compose port bound to loopback. Other hostnames require Dashboard login.
+When enabled, Dashboard credentials grant administrator access through the
+Dashboard. Session requests must carry the selector, a valid origin-bound cookie,
+and same-origin browser headers. External API/MCP clients continue to use their
+API keys. Remote servers added to the Dashboard retain their existing settings.
+
+`WAHA_DASHBOARD_AUTO_AUTH=False` disables this behavior.
+`WAHA_DASHBOARD_SESSION_TTL` controls the cookie lifetime in seconds (60–86400; default 43200). Active pages renew the
+cookie automatically. Changing Dashboard credentials invalidates existing
+cookies; rotating only the API key does not interrupt Dashboard authentication.
+A private signing key is generated in the persisted sessions directory as
+`.dashboard-session-secret` (mode `0600`). Preserve it across container recreation.
+Reverse proxies must preserve the original Host header.

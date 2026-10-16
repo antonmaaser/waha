@@ -91,6 +91,7 @@
     "ical.js": "^2.2.1",
     "ioredis": "^5",
     "joi": "^17.13.3",
+    "jose": "^6.1.3",
     "knex": "^3.1.0",
     "libphonenumber-js": "^1.10.36",
     "libsignal": "github:WhiskeySockets/libsignal-node#master",

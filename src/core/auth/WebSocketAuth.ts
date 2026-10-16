@@ -9,7 +9,7 @@ export class WebSocketAuth {
 
   async validateRequest(request: IncomingMessage) {
     const apikey = this.getKeyFromQueryParams('x-api-key', request);
-    return await this.strategy.user(apikey);
+    return await this.strategy.user(apikey, request);
   }
 
   private getKeyFromQueryParams(name: string, request: IncomingMessage) {
