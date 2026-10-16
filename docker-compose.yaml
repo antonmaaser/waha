@@ -32,7 +32,7 @@ services:
       WAHA_EVENTS_DOWNLOAD_MEDIA_MIMETYPES: ''
 
     ports:
-      - '127.0.0.1:3000:3000'
+      - '127.0.0.1:28621:3000'
     volumes:
       - './sessions:/app/.sessions'
       - './media:/app/.media'
@@ -41,7 +41,7 @@ services:
         - CMD
         - node
         - -e
-        - "fetch('http://127.0.0.1:3000/ping', {signal: AbortSignal.timeout(3000)}).then(async function(r) { if (!r.ok || (await r.json()).message !== 'pong') process.exit(1); }).catch(function() { process.exit(1); });"
+        - "fetch('http://127.0.0.1:28621/ping', {signal: AbortSignal.timeout(3000)}).then(async function(r) { if (!r.ok || (await r.json()).message !== 'pong') process.exit(1); }).catch(function() { process.exit(1); });"
       interval: 15s
       timeout: 5s
       start_period: 30s
