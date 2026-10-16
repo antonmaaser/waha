@@ -4,7 +4,6 @@ services:
   waha:
     image: waha-local:gows-arm
     pull_policy: never
-    platform: linux/arm64
     build:
       context: .
       dockerfile: Dockerfile
