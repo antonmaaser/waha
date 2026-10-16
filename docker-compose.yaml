@@ -28,13 +28,9 @@ services:
       WAHA_GOWS_DEVICE_HISTORY_SYNC_THUMBNAIL_SYNC_DAYS_LIMIT: 'null'
       # Download every media type when processing API responses or live events.
       # This does not proactively download attachments from the entire history.
-      WAHA_API_DOWNLOAD_MEDIA: 'true'
-      WAHA_API_DOWNLOAD_MEDIA_MIMETYPES: ''
       WAHA_EVENTS_DOWNLOAD_MEDIA: 'true'
       WAHA_EVENTS_DOWNLOAD_MEDIA_MIMETYPES: ''
-      WAHA_MEDIA_STORAGE: LOCAL
-      WHATSAPP_FILES_FOLDER: /app/.media
-      WHATSAPP_FILES_LIFETIME: '0'
+
     ports:
       - '127.0.0.1:3000:3000'
     volumes:
