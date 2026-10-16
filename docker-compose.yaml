@@ -1,14 +1,14 @@
-# Runtime configuration: https://waha.devlike.pro/docs/how-to/config/
+# Build this checkout: docker compose build
+# Serve the built image: docker compose up -d --no-build --wait
 services:
   waha:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      platforms:
-        - linux/arm64
     image: waha-local:gows-arm
     pull_policy: never
     platform: linux/arm64
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: release
     restart: unless-stopped
     env_file:
       - .env
@@ -17,6 +17,16 @@ services:
     volumes:
       - './sessions:/app/.sessions'
       - './media:/app/.media'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/ping', {signal: AbortSignal.timeout(3000)}).then(async function(r) { if (!r.ok || (await r.json()).message !== 'pong') process.exit(1); }).catch(function() { process.exit(1); });"
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
     logging:
       driver: json-file
       options:

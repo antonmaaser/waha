@@ -55,3 +55,6 @@ media
 .media
 .env.*
 !.env.example
+
+# Dashboard is fetched from the pinned artifact, not local generated output.
+src/dashboard

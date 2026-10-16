@@ -1,136 +1,90 @@
-ARG NODE_IMAGE_TAG=24.11-bookworm-slim
+# Explicit versions and digests keep base image selection reproducible.
+ARG NODE_IMAGE=node:24.11.1-bookworm-slim@sha256:48abc13a19400ca3985071e287bd405a1d99306770eb81d61202fb6b65cf0b57
+ARG ASSETS_IMAGE=alpine:3.22.2@sha256:4b7ce07002c69e8f3d704a9c5d6fd3053be500b7f1c69fc0d80990c2ad8dd412
 
-#
-# Build
-#
-FROM node:${NODE_IMAGE_TAG} AS build
+FROM ${NODE_IMAGE} AS dependencies
 ENV PUPPETEER_SKIP_DOWNLOAD=True
-
-# git + build toolchain for git deps
+WORKDIR /git
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git python3 build-essential curl ca-certificates unzip && \
     rm -rf /var/lib/apt/lists/*
+RUN npm install -g corepack@0.34.5 && corepack enable
+COPY package.json yarn.lock .yarnrc.yml ./
+RUN --mount=type=cache,id=waha-yarn-arm64,target=/git/.yarn/cache yarn install --immutable
 
-# npm packages
-WORKDIR /git
-COPY package.json .
-COPY yarn.lock .
-COPY .yarnrc.yml .
-ENV YARN_CHECKSUM_BEHAVIOR=update
+# Compile this checkout; source edits do not invalidate dependency installation.
+FROM dependencies AS build
+COPY tsconfig.json tsconfig.build.json nest-cli.json ./
+COPY src ./src
+RUN yarn build && find ./dist -name '*.d.ts' -delete
 
-RUN npm install -g corepack && corepack enable
-RUN yarn install
+# Prune build tools independently of source compilation.
+FROM dependencies AS production-dependencies
+RUN --mount=type=cache,id=waha-yarn-arm64,target=/git/.yarn/cache yarn workspaces focus --all --production
 
-# App
-WORKDIR /git
-ADD . /git
-RUN yarn install
-RUN yarn build && find ./dist -name "*.d.ts" -delete
-
-#
-# Dashboard
-#
-FROM node:${NODE_IMAGE_TAG} AS dashboard
-
-# jq to parse json
-RUN apt-get update && apt-get install -y jq && rm -rf /var/lib/apt/lists/*
-
-# wget, unzip
-RUN apt-get update && apt-get install -y wget unzip && rm -rf /var/lib/apt/lists/*
-
+# These stages only download assets; they do not run the glibc GOWS binary.
+FROM ${ASSETS_IMAGE} AS assets
+RUN apk add --no-cache ca-certificates curl jq unzip
 COPY waha.config.json /tmp/waha.config.json
-RUN \
-    WAHA_DASHBOARD_GITHUB_REPO=$(jq -r '.waha.dashboard.repo' /tmp/waha.config.json) && \
-    WAHA_DASHBOARD_SHA=$(jq -r '.waha.dashboard.ref' /tmp/waha.config.json) && \
-    wget https://github.com/${WAHA_DASHBOARD_GITHUB_REPO}/archive/${WAHA_DASHBOARD_SHA}.zip \
-    && unzip ${WAHA_DASHBOARD_SHA}.zip -d /tmp/dashboard \
-    && mkdir -p /dashboard \
-    && mv /tmp/dashboard/dashboard-${WAHA_DASHBOARD_SHA}/* /dashboard/ \
-    && rm -rf ${WAHA_DASHBOARD_SHA}.zip \
-    && rm -rf /tmp/dashboard/dashboard-${WAHA_DASHBOARD_SHA}
 
-#
-# GOWS
-#
-FROM node:${NODE_IMAGE_TAG} AS gows
+FROM assets AS dashboard
+RUN set -eu; \
+    repo=$(jq -r '.waha.dashboard.repo' /tmp/waha.config.json); \
+    ref=$(jq -r '.waha.dashboard.ref' /tmp/waha.config.json); \
+    curl --fail --location --retry 3 "https://github.com/${repo}/archive/${ref}.zip" -o /tmp/dashboard.zip; \
+    unzip -q /tmp/dashboard.zip -d /tmp/dashboard; \
+    mv "/tmp/dashboard/dashboard-${ref}" /dashboard
+
+FROM assets AS gows
 ARG TARGETARCH
-RUN test "$TARGETARCH" = "arm64"
+RUN test "$TARGETARCH" = arm64
+RUN set -eu; \
+    repo=$(jq -r '.waha.gows.repo' /tmp/waha.config.json); \
+    ref=$(jq -r '.waha.gows.ref' /tmp/waha.config.json); \
+    curl --fail --location --retry 3 "https://github.com/${repo}/releases/download/${ref}/gows-${TARGETARCH}" -o /gows; \
+    chmod +x /gows
+
+FROM ${NODE_IMAGE} AS opustags
+ARG OPUSTAGS_VERSION=1.10.1
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends jq wget ca-certificates && \
+    apt-get install -y --no-install-recommends build-essential cmake pkg-config libogg-dev curl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
+RUN set -eu; \
+    curl --fail --location --retry 3 "https://github.com/fmang/opustags/archive/refs/tags/${OPUSTAGS_VERSION}.tar.gz" -o /tmp/opustags.tar.gz; \
+    tar -xzf /tmp/opustags.tar.gz -C /tmp; \
+    cmake -S "/tmp/opustags-${OPUSTAGS_VERSION}" -B /tmp/build -DCMAKE_BUILD_TYPE=Release; \
+    cmake --build /tmp/build; \
+    cmake --install /tmp/build --prefix /output
 
-COPY waha.config.json /tmp/waha.config.json
-WORKDIR /go/gows
-RUN \
-    GOWS_GITHUB_REPO=$(jq -r '.waha.gows.repo' /tmp/waha.config.json) && \
-    GOWS_SHA=$(jq -r '.waha.gows.ref' /tmp/waha.config.json) && \
-    mkdir -p /go/gows/bin && \
-    wget -O /go/gows/bin/gows https://github.com/${GOWS_GITHUB_REPO}/releases/download/${GOWS_SHA}/gows-${TARGETARCH} && \
-    chmod +x /go/gows/bin/gows
-
-
-#
-# Final
-#
-FROM node:${NODE_IMAGE_TAG} AS release
-ENV PUPPETEER_SKIP_DOWNLOAD=True
-# Quick fix for memory potential memory leaks
-# https://github.com/devlikeapro/waha/issues/347
-ENV NODE_OPTIONS="--max-old-space-size=16384"
-ENV WHATSAPP_DEFAULT_ENGINE=GOWS
-ARG OPUSTAGS_VERSION="1.10.1"
-
-# Media processing, session archives, TLS, and process supervision.
+# GOWS and the Node native addons need a glibc runtime.
+FROM ${NODE_IMAGE} AS runtime
+ENV NODE_ENV=production \
+    PUPPETEER_SKIP_DOWNLOAD=True \
+    NODE_OPTIONS=--max-old-space-size=16384 \
+    WHATSAPP_DEFAULT_ENGINE=GOWS \
+    WAHA_GOWS_PATH=/app/gows \
+    WAHA_GOWS_SOCKET=/tmp/gows.sock \
+    WAHA_ZIPPER=ZIPUNZIP \
+    GODEBUG=netdns=cgo
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        ffmpeg libvips zip unzip curl ca-certificates libc6 tini && \
+    apt-get install -y --no-install-recommends ffmpeg libvips42 libogg0 zip unzip ca-certificates tini && \
     rm -rf /var/lib/apt/lists/*
-
-# Build and install opustags so audio metadata can be cleaned up inside the container
-RUN set -eux; \
-    buildDeps='build-essential cmake pkg-config libogg-dev'; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends ${buildDeps}; \
-    mkdir -p /tmp/opustags; \
-    curl -L https://github.com/fmang/opustags/archive/refs/tags/${OPUSTAGS_VERSION}.tar.gz \
-      | tar -xz -C /tmp/opustags; \
-    cd /tmp/opustags/opustags-${OPUSTAGS_VERSION}; \
-    cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release; \
-    cmake --build build --config Release; \
-    cmake --install build; \
-    rm -rf /tmp/opustags; \
-    apt-get purge -y --auto-remove ${buildDeps}; \
-    rm -rf /var/lib/apt/lists/*
-
-# Attach sources, install packages
+COPY --from=opustags /output/bin/opustags /usr/local/bin/opustags
 WORKDIR /app
-COPY package.json ./
-COPY --from=build /git/node_modules ./node_modules
-COPY --from=build /git/dist ./dist
-COPY --from=dashboard /dashboard ./dist/dashboard
-COPY --from=gows /go/gows/bin/gows /app/gows
 COPY .env.example ./.env.example
 COPY scripts/init-waha.js ./scripts/init-waha.js
-RUN chmod +x ./scripts/init-waha.js \
-  && printf '%s\n' '#!/bin/sh' 'exec node /app/scripts/init-waha.js "$@"' > /usr/local/bin/init-waha \
-  && chmod +x /usr/local/bin/init-waha
-ENV WAHA_GOWS_PATH=/app/gows
-ENV WAHA_GOWS_SOCKET=/tmp/gows.sock
-
-COPY entrypoint.sh /entrypoint.sh
-
-# Chokidar options to monitor file changes
-ENV CHOKIDAR_USEPOLLING=1
-ENV CHOKIDAR_INTERVAL=5000
-
-# WAHA variables
-ENV WAHA_ZIPPER=ZIPUNZIP
-
-# GOWS - use libc DNS resolver
-ENV GODEBUG=netdns=cgo
-
-# Run command, etc
+RUN printf '%s\n' '#!/bin/sh' 'exec node /app/scripts/init-waha.js "$@"' > /usr/local/bin/init-waha && \
+    chmod +x /usr/local/bin/init-waha
+COPY --chmod=755 entrypoint.sh /entrypoint.sh
 EXPOSE 3000
-# Use tini as init system to handle zombie processes properly
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/entrypoint.sh"]
+
+# Stable runtime artifacts precede the layers that change with local MCP edits.
+FROM runtime AS release
+COPY package.json ./
+COPY --from=production-dependencies /git/node_modules ./node_modules
+COPY --from=gows /gows ./gows
+COPY --from=dashboard /dashboard ./dist/dashboard
+COPY --from=build /git/dist ./dist
+COPY --from=build /git/src/apps/mcp ./src/apps/mcp
