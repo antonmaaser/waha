@@ -47,36 +47,5 @@ if [ -n "$key" ]; then
   fi
 fi
 
-#
-# xvfb-run
-#
-USE_XVFB=false
-
-# Check WAHA_RUN_XVFB parameter - only test for "false" case, treat all others as True
-if [ "$WAHA_RUN_XVFB" = "false" ] || [ "$WAHA_RUN_XVFB" = "False" ] || [ "$WAHA_RUN_XVFB" = "0" ]; then
-  # Explicitly disabled by user
-  echo "WAHA_RUN_XVFB value: $WAHA_RUN_XVFB - xvfb is disabled"
-  USE_XVFB=false
-else
-  # Check engine and run test if it's WEBJS or not specified
-  if [ -z "$WHATSAPP_DEFAULT_ENGINE" ] || [ "$WHATSAPP_DEFAULT_ENGINE" = "WEBJS" ]; then
-    # Try to run xvfb-run with a test command
-    if xvfb-run --auto-servernum echo "xvfb-run is working!"; then
-      USE_XVFB=true
-    else
-      echo "xvfb-run test failed, do not run it"
-      USE_XVFB=false
-    fi
-  fi
-fi
-
-#
-# Start your application using node with exec to ensure proper signal handling
-#
-if [ "$USE_XVFB" = "true" ]; then
-  echo "Executing node with xvfb-run..."
-  exec xvfb-run --auto-servernum node dist/main
-else
-  echo "Executing node without xvfb-run..."
-  exec node dist/main
-fi
+# Start the API with proper signal handling.
+exec node dist/main

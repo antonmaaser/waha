@@ -1,5 +1,4 @@
 ARG NODE_IMAGE_TAG=24.11-bookworm-slim
-ARG GOLANG_IMAGE_TAG=1.24-bookworm
 
 #
 # Build
@@ -28,21 +27,6 @@ ADD . /git
 RUN yarn install
 RUN yarn build && find ./dist -name "*.d.ts" -delete
 
-# Rebuild sharp from source on x86-64 so it runs on pre-v2 CPUs (no SSE4.2 requirement).
-# The prebuilt @img/sharp-linux-x64 binary requires x86-64-v2; -march=x86-64 limits
-# code generation to baseline x86-64 (SSE2 only). ARM64 prebuilts have no such
-# constraint, so no rebuild is needed there.
-# We call sharp's own install/build.js (not npm rebuild) so it first generates config.gypi
-# with include/lib paths pointing to its bundled @img/sharp-libvips-linux-x64 package,
-# then invokes node-gyp with those paths. Without this step node-gyp cannot find vips headers.
-RUN if [ "$(uname -m)" = "x86_64" ]; then \
-        LIBVIPS_DEV_VER=$(node -e "require('/git/node_modules/sharp/package.json').devDependencies['@img/sharp-libvips-dev']" | tr -d '^') && \
-        npm install --prefix /tmp/sharp-dev --no-package-lock "@img/sharp-libvips-dev@${LIBVIPS_DEV_VER}" && \
-        cp -r /tmp/sharp-dev/node_modules/@img/sharp-libvips-dev /git/node_modules/@img/ && \
-        cd /git/node_modules/sharp && \
-        PATH="/git/node_modules/.bin:$PATH" CFLAGS="-march=x86-64" CXXFLAGS="-march=x86-64" node install/build.js; \
-    fi
-
 #
 # Dashboard
 #
@@ -68,31 +52,20 @@ RUN \
 #
 # GOWS
 #
-FROM golang:${GOLANG_IMAGE_TAG} AS gows
-
-# jq to parse json
-RUN apt-get update && apt-get install -y jq && rm -rf /var/lib/apt/lists/*
-
-# install protoc
+FROM node:${NODE_IMAGE_TAG} AS gows
+ARG TARGETARCH
+RUN test "$TARGETARCH" = "arm64"
 RUN apt-get update && \
-    apt-get install protobuf-compiler -y
-
-# Image processing for thumbnails
-RUN apt-get update  \
-    && apt-get install -y libvips-dev \
-    && rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends jq wget ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY waha.config.json /tmp/waha.config.json
 WORKDIR /go/gows
 RUN \
     GOWS_GITHUB_REPO=$(jq -r '.waha.gows.repo' /tmp/waha.config.json) && \
     GOWS_SHA=$(jq -r '.waha.gows.ref' /tmp/waha.config.json) && \
-    ARCH=$(uname -m) && \
-    if [ "$ARCH" = "x86_64" ]; then ARCH="amd64"; \
-    elif [ "$ARCH" = "aarch64" ]; then ARCH="arm64"; \
-    else echo "Unsupported architecture: $ARCH" && exit 1; fi && \
     mkdir -p /go/gows/bin && \
-    wget -O /go/gows/bin/gows https://github.com/${GOWS_GITHUB_REPO}/releases/download/${GOWS_SHA}/gows-${ARCH} && \
+    wget -O /go/gows/bin/gows https://github.com/${GOWS_GITHUB_REPO}/releases/download/${GOWS_SHA}/gows-${TARGETARCH} && \
     chmod +x /go/gows/bin/gows
 
 
@@ -104,95 +77,14 @@ ENV PUPPETEER_SKIP_DOWNLOAD=True
 # Quick fix for memory potential memory leaks
 # https://github.com/devlikeapro/waha/issues/347
 ENV NODE_OPTIONS="--max-old-space-size=16384"
-ARG USE_BROWSER=chromium
-ARG WHATSAPP_DEFAULT_ENGINE
-
-RUN echo "USE_BROWSER=$USE_BROWSER"
-
-# Install ffmpeg to generate previews for videos
-RUN apt-get update && apt-get install -y ffmpeg --no-install-recommends && rm -rf /var/lib/apt/lists/*
-
-# Image processing for thumbnails
-RUN apt-get update  \
-    && apt-get install -y libvips \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install zip and unzip - either for chromium or chrome
-RUN if [ "$USE_BROWSER" = "chromium" ] || [ "$USE_BROWSER" = "chrome" ]; then \
-    apt-get update  \
-    && apt-get install -y zip unzip \
-    && rm -rf /var/lib/apt/lists/*; \
-    fi
-
-# Install wget - either for chromium or chrome
-RUN if [ "$USE_BROWSER" = "chromium" ] || [ "$USE_BROWSER" = "chrome" ]; then \
-    apt-get update  \
-    && apt-get install -y wget \
-    && rm -rf /var/lib/apt/lists/*; \
-    fi
-
-# Install fonts if using either chromium or chrome
-RUN if [ "$USE_BROWSER" = "chromium" ] || [ "$USE_BROWSER" = "chrome" ]; then \
-    apt-get update  \
-    && apt-get install -y \
-        fontconfig \
-        fonts-freefont-ttf \
-        fonts-gfs-neohellenic \
-        fonts-indic \
-        fonts-ipafont-gothic \
-        fonts-kacst \
-        fonts-liberation \
-        fonts-noto-cjk \
-        fonts-noto-color-emoji \
-        fonts-roboto \
-        fonts-thai-tlwg \
-        fonts-wqy-zenhei \
-        fonts-open-sans \
-      --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*; \
-    fi
-
-# Install xvfb, xauth
-RUN if [ "$USE_BROWSER" = "chromium" ] || [ "$USE_BROWSER" = "chrome" ]; then \
-    apt-get update && apt-get install -y --no-install-recommends \
-        xvfb \
-        xauth \
-        libnss3 \
-        libxss1 \
-        libasound2 \
-        libatk-bridge2.0-0 \
-        libgtk-3-0 \
-        libdrm2 \
-        ca-certificates \
-        && rm -rf /var/lib/apt/lists/*; \
-    fi
-
-# Install Chromium
-RUN if [ "$USE_BROWSER" = "chromium" ]; then \
-        apt-get update  \
-        && apt-get update \
-        && apt-get install -y chromium \
-          --no-install-recommends \
-        && rm -rf /var/lib/apt/lists/*; \
-    fi
-
-# Install Chrome
-# Available versions:
-# https://www.ubuntuupdates.org/package/google_chrome/stable/main/base/google-chrome-stable
-ARG CHROME_VERSION="152.0.7977.82-1"
+ENV WHATSAPP_DEFAULT_ENGINE=GOWS
 ARG OPUSTAGS_VERSION="1.10.1"
-RUN if [ "$USE_BROWSER" = "chrome" ]; then \
-        wget --no-verbose -O /tmp/chrome.deb https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}_amd64.deb \
-          && apt-get update \
-          && apt install -y /tmp/chrome.deb \
-          && rm /tmp/chrome.deb \
-          && rm -rf /var/lib/apt/lists/*; \
-    fi
 
-# curl
-RUN apt-get update  \
-    && apt-get install -y curl \
-    && rm -rf /var/lib/apt/lists/*
+# Media processing, session archives, TLS, and process supervision.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ffmpeg libvips zip unzip curl ca-certificates libc6 tini && \
+    rm -rf /var/lib/apt/lists/*
 
 # Build and install opustags so audio metadata can be cleaned up inside the container
 RUN set -eux; \
@@ -209,18 +101,6 @@ RUN set -eux; \
     rm -rf /tmp/opustags; \
     apt-get purge -y --auto-remove ${buildDeps}; \
     rm -rf /var/lib/apt/lists/*
-
-# GOWS requirements
-# libc6
-RUN  apt-get update \
-     && apt-get install -y libc6 \
-     && rm -rf /var/lib/apt/lists/*
-
-# Install tini for proper init process
-RUN apt-get update && apt-get install -y tini && rm -rf /var/lib/apt/lists/*
-
-# Set the ENV for docker image
-ENV WHATSAPP_DEFAULT_ENGINE=$WHATSAPP_DEFAULT_ENGINE
 
 # Attach sources, install packages
 WORKDIR /app

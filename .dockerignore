@@ -49,3 +49,9 @@ lerna-debug.log*
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+
+# Local runtime data
+media
+.media
+.env.*
+!.env.example
