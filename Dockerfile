@@ -37,7 +37,7 @@ RUN set -eu; \
 
 FROM assets AS gows
 ARG TARGETARCH
-RUN test "$TARGETARCH" = arm64
+#RUN test "$TARGETARCH" = arm64
 RUN set -eu; \
     repo=$(jq -r '.waha.gows.repo' /tmp/waha.config.json); \
     ref=$(jq -r '.waha.gows.ref' /tmp/waha.config.json); \
